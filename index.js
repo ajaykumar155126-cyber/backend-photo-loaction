@@ -45,7 +45,7 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const backendUrl = "https://backend-photo-loaction.onrender.com";
+    const backendUrl = 'https://backend-photo-loaction.onrender.com/upload';
     const photoURL = `${backendUrl}/${req.file.filename}`;
 
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
